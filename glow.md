@@ -325,3 +325,60 @@ doPartitioning()函数：
 *  在`lib/backends/Interpreter/InterpreterNodes.cpp`中添加相应代码
 *  定义在`lib/backends/CPU/Transform.cpp`文件下的`transformPostLowering()`执行在lower之后的优化，将一些节点转化为CPU后端的节点。
 *  特定后端的节点和指令定义在`backends`文件夹下
+
+## 添加后端
+
+添加一个后端要实现三个类：`Backend`的派生类`<name>Backend`，`CompiledFunction`的派生类`<name>Function`，`DeviceManger`的派生类`<name>DeviceManger`。
+
+### Backend
+
+必须实现的成员函数：
+
+* `virtual std::unique_ptr<CompiledFunction> compile(Function *F) const;`
+
+* `virtual std::unique_ptr<CompiledFunction> compile(Function *F, BackendOptions &opts) const;`
+
+* `virtual std::vector<std::unique_ptr<CompiledFunction>> compileFunctions(llvm::ArrayRef<Function *> functions, BackendOptions &opts) const;`
+
+* `virtual bool isOpSupported(const NodeInfo &NI) const;`
+  * 返回是否能够执行某节点，`NodeInfo`包括节点种类，输入输出的数据类型。
+
+可以实现的成员函数：
+
+* `virtual Expected<bool> transformPostLowering(Function *F, CompilationContext &cctx) const;`
+  * lower之后的转化。
+
+* `virtual bool acceptForExecution(const NodeInfo &NI) const;`
+  * 是否可以执行某节点，默认调用`isOpSupported()`
+* `virtual bool verify(const Function &F) const;`
+  * 验证F是否符合后端的图要求
+* `virtual bool verify(const IRFunction &IR) const;`
+  * 验证IR是否符合后端的要求
+* `virtual TensorLayoutCommon &getTensorLayoutRequirements() const;`
+  * 获取后端的张量布局
+* `virtual bool shouldLower(const Node *N) const;`
+  * N节点是否执行Lower
+* `virtual bool shouldShareBuffers() const;`
+  * 允许后端禁用共享缓冲区优化
+* `virtual void save(Function *F, llvm::StringRef outputDir, llvm::StringRef bundleName, llvm::StringRef mainEntryName) const;`
+  * 保存一个独立的可执行包
+* `virtual bool generateInst(Node *N, IRGenVisitor &irgen) const;`
+  * 节点到LIR的自定义转化过程
+* `virtual std::unique_ptr<FunctionPassPipeline> getOptimizationPipeline() const;`
+  * 后端自定的HIR优化
+
+### CompiledFunction
+
+表示编译的结果，包含特定的设备的可执行代码。
+
+必须实现：
+
+* `virtual void execute()`
+  * 将输入从占位符节点`PlaceHolder`复制到设备，执行，将输出从设备复制到占位符节点。
+
+可以实现：
+* `virtual void freeCompilationResources()`
+
+### DeviceManger
+
+负责初始化设备，收集常量(collecting constants)，执行。
